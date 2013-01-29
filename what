@@ -1,0 +1,107 @@
+#!/usr/bin/python
+
+# Like "w", but finds all processes associated with a TTY (not just
+# those registered in wtmp), and reports all users that are running
+# anything.
+
+import os, glob, pwd, time
+
+# Find all TTYs
+ttys = {}
+for tty in glob.glob("/dev/tty*") + glob.glob("/dev/pts/*"):
+    try:
+        st = os.stat(tty)
+    except EnvironmentError:
+        continue
+    # atime is time of last input
+    # mtime is time of last output
+    # ctime is when it was created
+    ttys[st.st_rdev] = (tty[5:], st, [])
+
+# Find all processes and map them to TTYs
+notty = {}
+uids = set()
+for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+        continue
+    pid = int(pid)
+
+    try:
+        status = file("/proc/%d/stat" % pid).read()
+        cmdline = file("/proc/%d/cmdline" % pid).read()
+        st = os.stat("/proc/%d" % pid)
+    except EnvironmentError:
+        continue
+    uids.add(st.st_uid)
+
+    parts = status.rsplit(") ", 1)[1].split()
+    tty_nr = int(parts[4])
+    tpgid = int(parts[5])
+    if tty_nr == 0 or tpgid == -1:
+        # No controlling terminal
+        notty.setdefault(st.st_uid, 0)
+        notty[st.st_uid] += 1
+        continue
+    if cmdline.startswith("/sbin/getty\0"):
+        # Ignore login terminals
+        continue
+    if tpgid == int(pid) and tty_nr in ttys:
+        ttys[tty_nr][-1].append(cmdline.replace("\0", " "))
+
+# Sort TTYs by input time
+ttys = sorted(ttys.values(), key=lambda tty: tty[1].st_atime)
+
+# Print
+def pretty_time(ts):
+    diff = time.time() - ts
+    days, diff = divmod(diff, 24*60*60)
+    hours, diff = divmod(diff, 60*60)
+    mins, secs = divmod(diff, 60)
+    if days > 99:
+        return "%5dd" % days
+    if days:
+        return "%2dd%02dh" % (days, hours)
+    if hours:
+        return "%2dh%02dm" % (hours, mins)
+    if mins:
+        return "%2dm%02ds" % (mins, secs)
+    return "%5ds" % secs
+
+    # Old code for absolute time
+    lt = time.localtime(ts)
+    if lt[:3] == time.localtime()[:3]:
+        return "%02d:%02d" % (lt.tm_hour, lt.tm_min)
+    return time.strftime("%d%b%g", lt)
+
+uptime = int(float(file("/proc/uptime").read().split()[0]))
+loadavg = file("/proc/loadavg").read().split()
+print " up %s  %2d users  load %s %s %s  procs %s" % \
+    (pretty_time(time.time() - uptime).strip(), len(uids),
+     loadavg[0], loadavg[1], loadavg[2], loadavg[3])
+
+fmt = "%-8.8s %-7s %6s %6s %6s %s"
+cols = int(os.environ.get("COLUMNS", 79))
+uid_colors = {}
+colors = [32, 33, 34, 35, 36]
+hdr = fmt % tuple("USER TTY LOGIN INPUT OUTPUT WHAT".split())
+hdr = hdr.replace("INPUT", "\033[4mINPUT\033[0m")
+print hdr
+for tty, st, cmds in ttys:
+    uid = st.st_uid
+    if uid not in uid_colors:
+        uid_colors[uid] = len(uid_colors) % len(colors)
+    color = "\033[%dm" % colors[uid_colors[uid]]
+    for cmd in cmds:
+        s = fmt % (pwd.getpwuid(st.st_uid)[0], tty, \
+                       pretty_time(st.st_ctime), \
+                       pretty_time(st.st_atime), \
+                       pretty_time(st.st_mtime), cmd)
+        print color + s[:cols] + "\033[0m"
+
+logged_in_uids = set()
+for tty in ttys:
+    logged_in_uids.add(tty[1].st_uid)
+for uid, count in notty.items():
+    if uid not in logged_in_uids:
+        continue
+    print "%-8.8s %-7s %d more processes" % (pwd.getpwuid(uid)[0], "none", count)
