@@ -2,7 +2,8 @@
 
 # Like "w", but finds all processes associated with a TTY (not just
 # those registered in wtmp), and reports all users that are running
-# anything.
+# anything.  In particular, unlike "w", this will shows things running
+# in detached screens/tmuxen.
 
 import os, glob, pwd, time
 
