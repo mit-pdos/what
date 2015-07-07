@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 
 # Like "w", but finds all processes associated with a TTY (not just
 # those registered in wtmp), and reports all users that are running
