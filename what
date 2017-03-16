@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 # Like "w", but finds all processes associated with a TTY (not just
 # those registered in wtmp), and reports all users that are running
@@ -28,8 +28,10 @@ for pid in os.listdir("/proc"):
     pid = int(pid)
 
     try:
-        status = file("/proc/%d/stat" % pid).read()
-        cmdline = file("/proc/%d/cmdline" % pid).read()
+        with open("/proc/%d/stat" % pid, 'r') as statusfile:
+            status = statusfile.read()
+        with open("/proc/%d/cmdline" % pid, 'r') as cmdlinefile:
+            cmdline = cmdlinefile.read()
         st = os.stat("/proc/%d" % pid)
     except EnvironmentError:
         continue
@@ -79,10 +81,10 @@ def getTermSize():
 
     # Try TIOCGWINSZ
     try:
-        s = fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, struct.pack("HH",0,0))
+        s = fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, struct.pack("HH", 0, 0))
         h, w = struct.unpack("HH", s)
         return w, h
-    except IOError, e:
+    except IOError as e:
         if e.errno != errno.EINVAL:
             raise
 
@@ -94,11 +96,13 @@ def getTermSize():
     # Give up
     return 80, 24
 
-uptime = int(float(file("/proc/uptime").read().split()[0]))
-loadavg = file("/proc/loadavg").read().split()
-print " up %s  %2d users  load %s %s %s  procs %s" % \
+with open("/proc/uptime", 'r') as uptimefile:
+    uptime = int(float(uptimefile.read().split()[0]))
+with open("/proc/loadavg", 'r') as loadavgfile:
+    loadavg = loadavgfile.read().split()
+print(" up %s  %2d users  load %s %s %s  procs %s" % \
     (pretty_time(time.time() - uptime).strip(), len(uids),
-     loadavg[0], loadavg[1], loadavg[2], loadavg[3])
+     loadavg[0], loadavg[1], loadavg[2], loadavg[3]))
 
 fmt = "%-8.8s %-7s %6s %6s %6s %s"
 cols = getTermSize()[0]
@@ -106,7 +110,7 @@ uid_colors = {}
 colors = [32, 33, 34, 35, 36]
 hdr = fmt % tuple("USER TTY LOGIN INPUT OUTPUT WHAT".split())
 hdr = hdr.replace("INPUT", "\033[4mINPUT\033[0m")
-print hdr[:cols]
+print(hdr[:cols])
 for tty, st, cmds in ttys:
     uid = st.st_uid
     if uid not in uid_colors:
@@ -117,7 +121,7 @@ for tty, st, cmds in ttys:
                        pretty_time(st.st_ctime), \
                        pretty_time(st.st_atime), \
                        pretty_time(st.st_mtime), cmd)
-        print color + s[:cols] + "\033[0m"
+        print(color + s[:cols] + "\033[0m")
 
 logged_in_uids = set()
 for tty in ttys:
@@ -125,4 +129,4 @@ for tty in ttys:
 for uid, count in notty.items():
     if uid not in logged_in_uids:
         continue
-    print "%-8.8s %-7s %d more processes" % (pwd.getpwuid(uid)[0], "none", count)
+    print("%-8.8s %-7s %d more processes" % (pwd.getpwuid(uid)[0], "none", count))
